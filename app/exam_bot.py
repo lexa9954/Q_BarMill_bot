@@ -9,6 +9,7 @@ from datetime import datetime
 import cfg
 from pyexpat.errors import messages
 from telebot import TeleBot
+from telebot import types
 
 from auth import auth, users  # Импортируем auth и users
 
@@ -31,11 +32,11 @@ def handle_message(message):
 
     # Генерация клавиатуры в зависимости от роли
     if user_role == 'admin':
-        reply_markup = keyboards_exam.kb_admin_menu()  # Клавиатура для админов
+        reply_markup = keyboards_exam.kb_admin_mainmenu()  # Клавиатура для админов
     else:
-        reply_markup = keyboards_exam.kb_user_menu()  # Клавиатура для пользователей
+        reply_markup = keyboards_exam.kb_user_mainmenu()  # Клавиатура для пользователей
 
-    # Ответ на сообщение
+     # Ответ на сообщение
     if message.text == 'Не прошедшие аттестацию ❗':
         show_overdue(message)
     elif message.text == 'Подлежащие аттестации в этом месяце ⏳':
@@ -69,7 +70,7 @@ def handle_tabel_number(message):
 
     # Если в result есть сообщение, то отправляем его обратно пользователю
     if 'info' in result:
-        bot.send_message(message.chat.id, result['info'], reply_markup=keyboards_exam.kb_main_menu_user(), parse_mode='HTML')
+        bot.send_message(message.chat.id, result['info'], reply_markup=keyboards_exam.kb_user_mainmenu(), parse_mode='HTML')
 
 def check_user_exam(id_1, id_2):
     query = f'''SELECT 
@@ -210,6 +211,7 @@ def get_fails_message(id_1, id_2):
 
 # ОПОВЕЩЕНИЕ ПОЛЬЗОВАТЕЛЯ О СДАЧИ ЭКЗАМЕНА
 def notify_auto_check():
+    sent_messages = {}
     while True:
         user_list = cfg.notify_exam()
         print(user_list)
@@ -220,7 +222,7 @@ def notify_auto_check():
                 exam_name = user[4]
                 type_quest_id = user[6]
                 bot.send_message(chat_id, text=f'''Напоминание: До просрочки по экзамену "{exam_name}" 
-                                                   остался 1 месяц!''', parse_mode="HTML")
+                                 остался 1 месяц!''', parse_mode="HTML")                                # Сообщение без вывода кнопки "Я сдал" -> Она ниже...
                 print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
             except Exception as e:
                 print(
@@ -235,11 +237,22 @@ def notify_auto_check():
                 chat_id = user[5]
                 exam_name = user[4]
                 type_quest_id = user[6]
-                bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! 
-                                                   до просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_done_bt(user_id, type_quest_id))
-                print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
+                if type_quest_id in [8,9]:  # Только для экзаменов ОРОП
+                    if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
+                        bot.delete_message(chat_id, sent_messages[chat_id])
+                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! 
+                                                   до просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_done_bt(user_id, type_quest_id)) # Сообщение с выводом кнопки "Я сдал"
+                    sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
+                    print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
+                else:
+                    if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
+                        bot.delete_message(chat_id, sent_messages[chat_id])                                                                                                                                               # т.к. пользователь сдает экзамен в течении крайних двух недель
+                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! 
+                                                   до просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_answer_OK(user_id, type_quest_id))
+                    sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
+                print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')                                                               
             except Exception as e:
-                print(
+                print(  
                     f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
                     f"ERROR: Пользователь {user[1]} {user[2]} не оповещён. Ошибка: {e}")
                 continue
@@ -279,17 +292,44 @@ def notify_auto_check():
 
         time.sleep(60)
 
-
+# ОБРАБОТЧИК НАЖАТИЙ КНОПОК
 @bot.callback_query_handler(func=lambda call: True)
+# ОБРАБОТКА ВСЕХ КНОПОК ЭКЗАМЕНОВ "ОРОП"
 def exam_done_bt(call):
-    if call.data.startswith('exam_done'):
+    if call.data.startswith('exam_done'):   
         _, people_id, type_quest_id = call.data.split('|')
-        people_id = int(people_id)
-        type_quest_id = int(type_quest_id)
-        cfg.off_notify_exam(people_id, type_quest_id)  # Отключение уведомления 
-        if type_quest_id in [8, 9]:
+        people_id = str(people_id)
+        type_quest_id = str(type_quest_id)
+        try:
+            cfg.off_notify_exam(people_id, type_quest_id)  # Отключение уведомления
             cfg.new_notify_exam(people_id, type_quest_id)  # Создание новой записи (только для экзаменов ОРОП)
+            empty_markup = types.InlineKeyboardMarkup()  # Пустая клавиатура
+            bot.edit_message_text(f"{call.message.text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=empty_markup)
+            bot.send_message(call.message.chat.id, text="Вы сдали экзамен!")
+        except Exception as e:
+            print(
+                f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
+                f"ERROR: Обработка кнопки безуспешна. Проверьте доступ к БД Ошибка: {e}")
+        
 
+
+# ОБРАБОТКА ВСЕХ КНОПОК ЭКЗАМЕНОВ В СПЦ
+def exam_OK_bt(call):
+    if call.data.startswith('exam_OK'):     
+        _, people_id, type_quest_id = call.data.split('|')
+        people_id = str(people_id)
+        type_quest_id = str(type_quest_id)
+        try:
+            cfg.off_notify_exam(people_id, type_quest_id)
+            empty_markup = types.InlineKeyboardMarkup()  # Пустая клавиатура
+            bot.edit_message_text(f"{call.message.text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=empty_markup)
+            bot.send_message(call.message.chat.id, text="Уведомления по текущему экзамену отключены. Не забудьте его сдать, если ещё этого не сделали!")
+        except Exception as e:
+            print(
+                f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
+                f"ERROR: Обработка кнопки безуспешна. Проверьте доступ к БД Ошибка: {e}")
+
+        
 
 # Запуск бота
 def run_bot():
