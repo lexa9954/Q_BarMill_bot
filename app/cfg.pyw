@@ -269,13 +269,28 @@ def notify_exam():
 
 # """ПРОВЕРКА ЭКЗАМЕНА ЗА ДВЕ НЕДЕЛИ ДО ПРОСРОЧКИ"""
 def notify_exam_2weeks():
-    query = '''SELECT peoples.id, last_name, first_name, second_name, Exam_typeQuest.Type_quest_text, log_auth_var.chat_id, type_quest_id FROM Exam_date
+    query = f'''SELECT peoples.id, last_name, first_name, second_name, Exam_typeQuest.Type_quest_text, log_auth_var.chat_id, type_quest_id FROM Exam_date
                INNER JOIN peoples ON peoples.id = Exam_date.people_id
                INNER JOIN log_auth_var ON log_auth_var.id_people = Exam_date.people_id
                INNER JOIN Exam_typeQuest ON Exam_typeQuest.id = Exam_date.type_quest_id
                WHERE CURDATE() BETWEEN DATE_ADD(DATE(last_date), INTERVAL 1 YEAR) - INTERVAL 14 DAY
                AND DATE_ADD(DATE(last_date), INTERVAL 1 YEAR)
                AND notify_check = 1'''
+    response = execute_query(URL+query, 7)
+    if response is None:
+        return []
+    else: return response
+
+# ПРОВЕРКА ДЛЯ ИСКЛЮЧЕНИЯ ПОВТОРНЫХ ДЕЙСТВИЙ ПО НАЖАТИЮ КНОПКИ "Я СДАЛ ЭКЗАМЕН"
+def check_for_new_exam(people_id):
+    query = f'''SELECT peoples.id, last_name, first_name, second_name, Exam_typeQuest.Type_quest_text, log_auth_var.chat_id, type_quest_id FROM Exam_date
+                INNER JOIN peoples ON peoples.id = Exam_date.people_id
+                INNER JOIN log_auth_var ON log_auth_var.id_people = Exam_date.people_id
+                INNER JOIN Exam_typeQuest ON Exam_typeQuest.id = Exam_date.type_quest_id
+                WHERE log_auth_var.id_people = {people_id}
+                AND CURDATE() BETWEEN DATE_ADD(DATE(last_date), INTERVAL 1 YEAR) - INTERVAL 14 DAY
+                AND DATE_ADD(DATE(last_date), INTERVAL 1 YEAR)
+                AND notify_check = 1'''
     response = execute_query(URL+query, 7)
     if response is None:
         return []

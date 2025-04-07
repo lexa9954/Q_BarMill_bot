@@ -221,8 +221,7 @@ def notify_auto_check():
                 chat_id = user[5]
                 exam_name = user[4]
                 type_quest_id = user[6]
-                bot.send_message(chat_id, text=f'''Напоминание: До просрочки по экзамену "{exam_name}" 
-                                 остался 1 месяц!''', parse_mode="HTML")                                # Сообщение без вывода кнопки "Я сдал" -> Она ниже...
+                bot.send_message(chat_id, text=f'''Напоминание: До просрочки по экзамену "{exam_name}" остался 1 месяц!''', parse_mode="HTML") # Сообщение без вывода кнопки "Я сдал" -> Она ниже...
                 print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
             except Exception as e:
                 print(
@@ -240,15 +239,13 @@ def notify_auto_check():
                 if type_quest_id in [8,9]:  # Только для экзаменов ОРОП
                     if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
                         bot.delete_message(chat_id, sent_messages[chat_id])
-                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! 
-                                                   до просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_done_bt(user_id, type_quest_id)) # Сообщение с выводом кнопки "Я сдал"
+                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! До просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_done_bt(user_id, type_quest_id)) # Сообщение с выводом кнопки "Я сдал"
                     sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
                     print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
                 else:
                     if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
-                        bot.delete_message(chat_id, sent_messages[chat_id])                                                                                                                                               # т.к. пользователь сдает экзамен в течении крайних двух недель
-                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! 
-                                                   до просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_answer_OK(user_id, type_quest_id))
+                        bot.delete_message(chat_id, sent_messages[chat_id])
+                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! До просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_answer_OK(user_id, type_quest_id))
                     sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
                 print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')                                                               
             except Exception as e:
@@ -301,11 +298,12 @@ def exam_done_bt(call):
         people_id = str(people_id)
         type_quest_id = str(type_quest_id)
         try:
-            cfg.off_notify_exam(people_id, type_quest_id)  # Отключение уведомления
-            cfg.new_notify_exam(people_id, type_quest_id)  # Создание новой записи (только для экзаменов ОРОП)
-            empty_markup = types.InlineKeyboardMarkup()  # Пустая клавиатура
-            bot.edit_message_text(f"{call.message.text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=empty_markup)
-            bot.send_message(call.message.chat.id, text="Вы сдали экзамен!")
+            if cfg.check_for_new_exam(people_id) != []: # Упрощённо: Если кнопка 'я сдал' нажимается впервые
+                cfg.off_notify_exam(people_id, type_quest_id)  # Отключение уведомления
+                cfg.new_notify_exam(people_id, type_quest_id)  # Создание новой записи (только для экзаменов ОРОП)
+                empty_markup = types.InlineKeyboardMarkup()  # Пустая клавиатура
+                bot.edit_message_text(f"{call.message.text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=empty_markup)
+                bot.send_message(call.message.chat.id, text="Вы сдали экзамен!") 
         except Exception as e:
             print(
                 f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
