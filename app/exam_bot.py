@@ -208,20 +208,20 @@ def get_fails_message(id_1, id_2):
         return None
 
 
-
 # ОПОВЕЩЕНИЕ ПОЛЬЗОВАТЕЛЯ О СДАЧИ ЭКЗАМЕНА
+sent_messages = {}
 def notify_auto_check():
-    sent_messages = {}
+    global sent_messages
     while True:
         user_list = cfg.notify_exam()
-        print(user_list)
         for user in user_list:
             try:
                 user_id = user[0]
                 chat_id = user[5]
                 exam_name = user[4]
                 type_quest_id = user[6]
-                bot.send_message(chat_id, text=f'''Напоминание: До просрочки по экзамену "{exam_name}" остался 1 месяц!''', parse_mode="HTML") # Сообщение без вывода кнопки "Я сдал" -> Она ниже...
+                
+                bot.send_message(chat_id, text=f'''Напоминание: В этом месяце необходимо пройти аттестацию по "{exam_name}"!''', parse_mode="HTML")
                 print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
             except Exception as e:
                 print(
@@ -236,17 +236,24 @@ def notify_auto_check():
                 chat_id = user[5]
                 exam_name = user[4]
                 type_quest_id = user[6]
-                if type_quest_id in [8,9]:  # Только для экзаменов ОРОП
-                    if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
-                        bot.delete_message(chat_id, sent_messages[chat_id])
-                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! До просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_done_bt(user_id, type_quest_id)) # Сообщение с выводом кнопки "Я сдал"
-                    sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
-                    print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')
+                
+                # Сообщение для отправки
+                message_text = f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! До просрочки осталось менее двух недель!'''
+
+                # Если экзамен относится к ОРОП (id 8 или 9) в СПЦ
+                if type_quest_id in [8, 9]:
+                    keyboard = keyboards_exam.exam_done_bt(user_id, type_quest_id)
                 else:
-                    if chat_id in sent_messages:  # Если сообщение уже отправлялось, удаляем старое
-                        bot.delete_message(chat_id, sent_messages[chat_id])
-                    bot.send_message(chat_id, text=f'''Напоминание: Вам необходимо сдать экзамен "{exam_name}"! До просрочки осталось менее двух недель!''', reply_markup = keyboards_exam.exam_answer_OK(user_id, type_quest_id))
-                    sent_messages[chat_id] = bot.message.message_id  # Сохраняем ID нового сообщения
+                    keyboard = keyboards_exam.exam_answer_OK(user_id, type_quest_id)
+
+                # Отправляем сообщение
+                message = bot.send_message(chat_id, text=message_text, reply_markup=keyboard)
+
+                # Сохраняем в словарь с message_id, чтобы связать его с chat_id
+                if message.message_id not in sent_messages:
+                    sent_messages[message.message_id] = []  # Если такого message_id нет в словаре, создаём новый список
+                sent_messages[message.message_id].append(chat_id)  # Добавляем chat_id в список для данного message_id
+
                 print(f'Отправил сообщение пользователю {user[1]} {user[2]} об экзамене {exam_name}')                                                               
             except Exception as e:
                 print(  
@@ -286,13 +293,17 @@ def notify_auto_check():
                     f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
                     f"ERROR: Администратор {admin[0]} {admin[1]} не оповещён. Ошибка: {e}")
                 continue
-
+        
+        print('!!!!!!!!!Текущий словарь!!!!!!!!!')
+        print(sent_messages)
+        print('!!!!!!!!!!!!!!!')
         time.sleep(60)
 
 # ОБРАБОТЧИК НАЖАТИЙ КНОПОК
 @bot.callback_query_handler(func=lambda call: True)
 # ОБРАБОТКА ВСЕХ КНОПОК ЭКЗАМЕНОВ "ОРОП"
 def exam_done_bt(call):
+    global sent_messages
     if call.data.startswith('exam_done'):   
         _, people_id, type_quest_id = call.data.split('|')
         people_id = str(people_id)
@@ -303,7 +314,20 @@ def exam_done_bt(call):
                 cfg.new_notify_exam(people_id, type_quest_id)  # Создание новой записи (только для экзаменов ОРОП)
                 empty_markup = types.InlineKeyboardMarkup()  # Пустая клавиатура
                 bot.edit_message_text(f"{call.message.text}", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=empty_markup)
-                bot.send_message(call.message.chat.id, text="Вы сдали экзамен!") 
+                bot.send_message(call.message.chat.id, text="Вы сдали экзамен!")
+
+                # Удаляем сообщение из sent_messages
+                if call.message.message_id in sent_messages:
+                    # Найдем все chat_id, связанные с данным message_id
+                    for chat_id in sent_messages[call.message.message_id]:
+                        # Делаем дополнительные действия, если нужно (например, логирование)
+                        print(f"Удаляем сообщение с ID {call.message.message_id} для пользователя с chat_id {chat_id}")
+                    # Удаляем записи по message_id
+                    del sent_messages[call.message.message_id]
+                
+                print('---------------\nВызывается словарь с коллбека кнопки\n---------------')
+                print(sent_messages)
+                print('---------------')
         except Exception as e:
             print(
                 f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
@@ -327,7 +351,7 @@ def exam_OK_bt(call):
                 f"{datetime.now().date()} | {datetime.now().strftime('%H:%M:%S')} "
                 f"ERROR: Обработка кнопки безуспешна. Проверьте доступ к БД Ошибка: {e}")
 
-        
+
 
 # Запуск бота
 def run_bot():
