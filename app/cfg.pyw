@@ -1,6 +1,7 @@
 import requests
 import telebot
 import re
+from collections import defaultdict
 
 from telebot import apihelper
 
@@ -25,8 +26,6 @@ def send_request(url):
     except Exception as err:
         print(f'Произошла ошибка: {err}')
     return None
-
-
 
 
 def execute_query(query, col):
@@ -66,6 +65,7 @@ def execute_query_read(query, col):
         return response
     else:
         return []
+
 
 #  """ПОЛУЧЕНИЕ СПИСКА ПОЛЬЗОВАТЕЛЕЙ БОТА"""
 def get_auth_tabel():
@@ -110,6 +110,7 @@ def get_admins():
     response = execute_query(URL+query, 5)
     return response
 
+
 #  '''ПОЛУЧЕНИЕ СПИСКА ДЛЯ ОПОВЕЩЕНИЯ ОБ ЭКЗАМЕНАХ'''
 def get_exam_list():
     query = '''SELECT peoples.id, first_name, last_name, tabnumbersap, chat_id, str_org_structure FROM peoples 
@@ -118,6 +119,7 @@ def get_exam_list():
     response = execute_query(URL+query, 5)
     return response
 
+
 #  """ПОЛУЧЕНИЕ СПИСКА ПОЛЬЗОВАТЕЛЕЙ"""
 def get_people():
     query = '''SELECT peoples.id, first_name, last_name, tabnumbersap, chat_id, str_org_structure FROM peoples 
@@ -125,6 +127,7 @@ def get_people():
                         WHERE permission!="ADMIN" OR permission IS NULL;'''
     response = execute_query(URL+query, 6)
     return response
+
 
 #  """ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ДВИГАТЕЛЕ ПО ИНВЕНТАРНОМУ НОМЕРУ"""
 def get_vehicle_by_number(inv_num):
@@ -240,6 +243,7 @@ def check_user_true(tabel):
         return False
     else: return True
 
+
 #  """ДОБАВЛЕНИЕ ЗАПИСИ ДЛЯ ОПОВЕЩЕНИЯ АДМИНИСТРАТОРОВ"""
 def notification_message(bot):
     if bot == "exam":
@@ -250,9 +254,11 @@ def notification_message(bot):
         txt = execute_query(URL + f'SELECT text FROM warehousebm.telegram_commands WHERE viewed = 0 AND bot_id = "{BOT_TOKEN_AC}"', 1)
     return txt
 
+
 # '''ИЗМЕНЕНИЕ СТАТУСА ОТПРАВЛЕННОГО СООБЩЕНИЯ НА viewed = 1'''
 def notification_viewed():
     execute_query(URL+'UPDATE telegram_commands SET viewed = 1 WHERE viewed = 0', 1)
+
 
 # """ПРОВЕРКА ЭКЗАМЕНА ЗА МЕСЯЦ ДО ПРОСРОЧКИ"""
 def notify_exam():
@@ -267,6 +273,7 @@ def notify_exam():
         return []
     else: return response
 
+
 # """ПРОВЕРКА ЭКЗАМЕНА ЗА ДВЕ НЕДЕЛИ ДО ПРОСРОЧКИ"""
 def notify_exam_2weeks():
     query = f'''SELECT peoples.id, last_name, first_name, second_name, Exam_typeQuest.Type_quest_text, log_auth_var.chat_id, type_quest_id FROM Exam_date
@@ -280,6 +287,7 @@ def notify_exam_2weeks():
     if response is None:
         return []
     else: return response
+
 
 # ПРОВЕРКА ДЛЯ ИСКЛЮЧЕНИЯ ПОВТОРНЫХ ДЕЙСТВИЙ ПО НАЖАТИЮ КНОПКИ "Я СДАЛ ЭКЗАМЕН"
 def check_for_new_exam(people_id):
@@ -307,45 +315,55 @@ def off_notify_exam(id, type_quest_id):
     response = execute_query_read(URL+query, 1)
     return response
 
+# Создание новой записи в exam_date (необходимо для экзаменов не входящих в СПЦ)
 def new_notify_exam(people_id, type_quest_id):
     query = f'''INSERT INTO Exam_date (people_id, type_quest_id, success_quest_percent, last_date, time_exam, Protocol_num, date_type_exam)
                 VALUES ({people_id}, {type_quest_id}, 100, CURDATE(), 0, 0, 0)'''
     response = execute_query(URL+query, 1)
     return response
 
-# Мастер автоматики
-def get_auto_master():
-    query = '''SELECT last_name, first_name, chat_id, peoples.str_org_structure, org_structure.org_structure_id FROM log_auth_var
+# Получение chat_id пользователя по его org_structure_id (для отправки уведомлений всем начальникам по иерархии)
+def get_chat_id(org_structure_id):
+    query = f'''SELECT chat_id FROM log_auth_var
                INNER JOIN peoples ON peoples.id = log_auth_var.id_people
-               INNER JOIN org_structure ON org_structure.id = peoples.str_org_structure
-               WHERE peoples.str_org_structure = 29'''
-    response = execute_query(URL+query, 5)
-    return response
-
-# Мастер электриков
-def get_elec_master():
-    query = '''SELECT last_name, first_name, chat_id, peoples.str_org_structure, org_structure.org_structure_id FROM log_auth_var
-               INNER JOIN peoples ON peoples.id = log_auth_var.id_people
-               INNER JOIN org_structure ON org_structure.id = peoples.str_org_structure
-               WHERE peoples.str_org_structure = 28'''
-    response = execute_query(URL+query, 5)
-    return response
-
-def get_electro_boss():
-    query = '''SELECT last_name, first_name, chat_id, peoples.str_org_structure, org_structure.org_structure_id FROM log_auth_var
-               INNER JOIN peoples ON peoples.id = log_auth_var.id_people
-               INNER JOIN org_structure ON org_structure.id = peoples.str_org_structure
-               WHERE peoples.str_org_structure = 26'''
-    response = execute_query(URL+query, 5)
+               WHERE peoples.str_org_structure = {org_structure_id}'''
+    
+    response = execute_query_read(URL+query,1)
     return response
 
 
-# Подчиненные мастера автоматики
-'''SELECT last_name,first_name,second_name, org_structure_id FROM peoples
-INNER JOIN org_structure on org_structure.id = peoples.str_org_structure
-WHERE org_structure.org_structure_id = 29'''
+# ПОЛУЧЕНИЕ ИЕРАРХИИ ПОЛЬЗОВАТЕЛЕЙ ИЗ БД
+def get_hierarchy():
+    query = '''SELECT org_structure_id, id FROM org_structure ORDER BY org_structure_id;'''
+    raw_response = execute_query(URL + query, 2)
 
-# Подчиненные мастера электриков
-'''SELECT last_name,first_name,second_name, org_structure_id FROM peoples
-INNER JOIN org_structure on org_structure.id = peoples.str_org_structure
-WHERE org_structure.org_structure_id = 28'''
+    # Преобразуем строки в кортежи (child, boss), обрабатывая '0' и None как отсутствие начальника
+    response = []
+    for boss_id, emp_id in raw_response:
+        try:
+            boss_id = int(boss_id)
+            if boss_id == 0:
+                boss_id = None
+        except:
+            boss_id = None
+
+        response.append((int(emp_id), boss_id))
+
+    # Собираем структуру: начальник -> список подчиненных
+    tree_map = defaultdict(list)
+    for emp_id, boss_id in response:
+        if boss_id is not None:
+            tree_map[boss_id].append(emp_id)
+
+    # Рекурсивно строим иерархию подчиненных
+    def build_hierarchy(boss_id):
+        return {
+            emp_id: build_hierarchy(emp_id)
+            for emp_id in tree_map.get(boss_id, [])
+        }
+
+    # Ищем корневые ID (у которых нет начальника)
+    root_ids = [emp_id for emp_id, boss_id in response if boss_id is None]
+
+    # Собираем финальное дерево и возвращаем
+    return {root_id: build_hierarchy(root_id) for root_id in root_ids}
